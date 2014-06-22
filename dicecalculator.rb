@@ -111,7 +111,7 @@ def calculate_probability_grid (dice_string = 'B')
           0.upto(threat_temp - 1) do |m|
             0.upto(despair_temp - 1) do |n|
               # i is successes, m is failures. That means the absolute value of a negative index is the failure index. Same with threat.
-              result_grid[i - l][j - m][k][n] += good_grid[i][j][k][0] * bad_grid[l][m][n][0]
+              result_grid[i - l][j - m][k][n] += good_grid[i][j][k][0] * bad_grid[l][m][0][n]
             end
           end
         end
@@ -363,7 +363,6 @@ def group_target_calculation (result_grid, t_string = '', d_string)
   # So all SA is true if A is true, or SRR is true if SR is true.
   a_line_y = t_advantage_max - t_advantage_min + 1
   a_line_x = t_triumph_max - t_triumph_min + 1
-
   a_line_value = Array.new(a_line_x) { Array.new(a_line_x, false) }
   t_grid.each_index do |i|
     t_grid[i].each_index do |j|
@@ -382,14 +381,14 @@ def group_target_calculation (result_grid, t_string = '', d_string)
     # Make sure that s_x remains in boundaries of t_grid.
     # As above, in "Shenanigans", everything after a cell will be part of the solution if the preceeding one is.
     # Since the target grid has a compacted range, everything past a maximum cell shares that cell's truth value.
-    s_x = (i + t_success_min) < t_success_max ? i: t_success_max - t_success_min
-    s_x = 0 if (t_success_max - t_success_min) == 0
+    s_x = i < (t_success_max  - t_success_min) ? i: t_success_max - t_success_min
+    s_x = 0 if t_success_max - t_success_min == 0
 
     result_success_line[t_advantage_min..advantage_max].each_with_index do |result_advantage_line, j|
-      a_y = (j + t_advantage_min) < t_advantage_max ? j : t_advantage_max - t_advantage_min
+      a_y = j < (t_advantage_max - t_advantage_min) ? j : t_advantage_max - t_advantage_min
       a_y = 0 if t_advantage_max - t_advantage_min == 0
       result_advantage_line[t_triumph_min..triumph_max].each_with_index do |result_triumph_line, k|
-        tr_z = (k + t_triumph_min) < t_triumph_max ? k : t_triumph_max - t_triumph_min
+        tr_z = k < (t_triumph_max - t_triumph_min) ? k : t_triumph_max - t_triumph_min
         tr_z = 0 if t_triumph_max - t_triumph_min == 0
         next if !(t_grid[s_x][a_y][tr_z])
         result_triumph_line[0..despair_max].each do |result_cell|
@@ -403,12 +402,45 @@ def group_target_calculation (result_grid, t_string = '', d_string)
     result_success_line.reverse[0..threat_max - 1].each do |result_threat_line|
       break if (threat_max == 0)
       result_threat_line[t_triumph_min..triumph_max].each_with_index do |result_triumph_line, k|
-        tr_z = (k + t_triumph_min) < t_triumph_max ? k : t_triumph_max - t_triumph_min
+        tr_z = k < (t_triumph_max - t_triumph_min) ? k : t_triumph_max - t_triumph_min
         tr_z = 0 if t_triumph_max - t_triumph_min == 0
         next if !(t_grid[s_x][0][tr_z])
         result_triumph_line[0..despair_max].each do |result_cell|
           #Success, Threat Probability
           target_probability += result_cell
+        end
+      end
+    end
+  end
+  #Next, if there are targets with 0 successes, iterate throguh the failure portion of the grid
+  if (t_success_min == 0 && failure_max != 0)
+    result_grid.reverse[0..failure_max - 1].each_with_index do |result_failure_line, i|
+      result_failure_line.each_with_index do |result_advantage_line, j|
+        a_y = j < (t_advantage_max - t_advantage_min) ? j : t_advantage_max - t_advantage_min
+        a_y = 0 if t_advantage_max - t_advantage_min == 0
+        result_advantage_line[t_triumph_min..triumph_max].each_with_index do |result_triumph_line, k|
+          tr_z = k < (t_triumph_max - t_triumph_min) ? k : t_triumph_max - t_triumph_min
+          tr_z = 0 if t_triumph_max - t_triumph_min == 0
+          next if !(t_grid[0][a_y][tr_z])
+          result_triumph_line[0..despair_max].each do |result_cell|
+            #Success, Advantage Probability
+            target_probability += result_cell
+          end
+        end
+      end
+      
+      # Only go through the threat loop is there is a target that doesn't need advantage
+      next if !(t_advantage_min == 0)
+      result_failure_line.reverse[0..threat_max - 1].each do |result_threat_line|
+        break if (threat_max == 0)
+        result_threat_line[t_triumph_min..triumph_max].each_with_index do |result_triumph_line, k|
+          tr_z = k < (t_triumph_max - t_triumph_min) ? k : t_triumph_max - t_triumph_min
+          tr_z = 0 if t_triumph_max - t_triumph_min == 0
+          next if !(t_grid[0][0][tr_z])
+          result_triumph_line[0..despair_max].each do |result_cell|
+            #Success, Threat Probability
+            target_probability += result_cell
+          end
         end
       end
     end
@@ -452,24 +484,26 @@ while ARGV.length > 0
   end
 end
 
+#If there is no dice string, prompt the user to make one
 if dice_string.nil? || dice_string == ''
   puts 'Dice Pool Input: (Use /[BSADPC]*/ to signify (B)oost, (S)etback, (A)bility, (D)ifficulty, (P)roficiency, (C)hallenge)'
   STDOUT.flush
   dice_string = gets.chomp.upcase
 end
-
+#Test the Dice String.
 if !(/[BSADPC]+/ === dice_string)
   puts 'Invalid Die String'
   exit
 end
 
+# If there is no target string, prompt the user to make one
 if target_toggle && (target_string.nil? || target_string == '')
   puts 'Target Input: \
   (Use /[ASTFRD]*/ to signify (S)uccesses, (F)ailures, (A)dvantages, (T)hreats, t(R)iumphs and (D)espairs.)'
   STDOUT.flush
   target_string = gets.chomp.upcase
 end
-
+# Test the Target String
 if target_toggle && !(/[ASTFRD]+/ === target_string)
   puts 'Invalid Target String'
   exit
